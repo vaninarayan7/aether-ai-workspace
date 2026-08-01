@@ -1,0 +1,29 @@
+[
+  {
+    "id": "aet-zlk-pah",
+    "title": "vani",
+    "organizer": "Nexora Host",
+    "ownerId": "anonymous-host",
+    "platform": "Nexora",
+    "time": "12:58 (2026-07-30)",
+    "duration": "30 mins",
+    "participants": [
+      "Nexora Host"
+    ],
+    "participantIds": [
+      "anonymous-host"
+    ],
+    "invitedEmails": [],
+    "project": "Nexora Virtual Network",
+    "status": "upcoming",
+    "tags": [
+      "Secure-WebRTC",
+      "Nexora-Native",
+      "No-Email"
+    ],
+    "password": "ruk",
+    "waitingRoomEnabled": true,
+    "locked": false,
+    "date": "2026-07-30"
+  }
+]

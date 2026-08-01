@@ -1,0 +1,115 @@
+import React, { useState } from "react";
+import { motion } from "motion/react";
+import { ShieldAlert, Building2, Users, User, ArrowRight } from "lucide-react";
+import { setSelectedRole } from "../lib/firebaseAuth";
+import { useNavigate } from "react-router-dom";
+import { UserRole } from "../types";
+
+export default function WelcomeScreen() {
+  const navigate = useNavigate();
+  const [hoveredRole, setHoveredRole] = useState<string | null>(null);
+
+  const handleSelectRole = (role: UserRole) => {
+    setSelectedRole(role);
+    navigate("/auth-callback");
+  };
+
+  const roles: {
+    id: UserRole;
+    title: string;
+    description: string;
+    icon: any;
+    color: string;
+    bg: string;
+    border: string;
+  }[] = [
+    {
+      id: "Super Admin",
+      title: "Super Admin",
+      description: "Manage platform analytics, organizations, subscriptions, and platform-wide configurations.",
+      icon: ShieldAlert,
+      color: "text-purple-500",
+      bg: "bg-purple-500/10",
+      border: "border-purple-500/20",
+    },
+    {
+      id: "Organizer",
+      title: "Organizer (Owner)",
+      description: "Own an organization, invite managers and employees, view organization analytics.",
+      icon: Building2,
+      color: "text-indigo-500",
+      bg: "bg-indigo-500/10",
+      border: "border-indigo-500/20",
+    },
+    {
+      id: "Manager",
+      title: "Manager",
+      description: "Manage assigned teams, schedule meetings, assign tasks, and view team reports.",
+      icon: Users,
+      color: "text-emerald-500",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-500/20",
+    },
+    {
+      id: "Employee",
+      title: "Employee",
+      description: "Access your personal workspace, chat, email assistant, meetings, tasks, and documents.",
+      icon: User,
+      color: "text-blue-500",
+      bg: "bg-blue-500/10",
+      border: "border-blue-500/20",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0C10] text-slate-900 dark:text-slate-100 flex flex-col items-center justify-center p-6 font-sans">
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center max-w-2xl mx-auto mb-10"
+      >
+        <h1 className="text-4xl md:text-5xl font-extrabold mb-4 tracking-tight">
+          Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-400">Enterprise AI</span>
+        </h1>
+        <p className="text-slate-500 dark:text-slate-400 text-lg">
+          Select your enterprise role to set up your workspace environment.
+        </p>
+      </motion.div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto w-full">
+        {roles.map((role, idx) => (
+          <motion.div
+            key={role.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.1 }}
+            onMouseEnter={() => setHoveredRole(role.id)}
+            onMouseLeave={() => setHoveredRole(null)}
+            onClick={() => handleSelectRole(role.id)}
+            className={`relative p-6 rounded-2xl border cursor-pointer transition-all duration-300 backdrop-blur-xl flex flex-col justify-between ${
+              hoveredRole === role.id
+                ? `scale-105 shadow-2xl ${role.border} bg-white/60 dark:bg-slate-900/60`
+                : "border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700"
+            }`}
+          >
+            <div>
+              <div className={`w-14 h-14 rounded-xl ${role.bg} ${role.color} flex items-center justify-center mb-6`}>
+                <role.icon className="w-7 h-7" />
+              </div>
+              
+              <h3 className="text-xl font-bold mb-2">{role.title}</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed mb-6">
+                {role.description}
+              </p>
+            </div>
+
+            <div className={`flex items-center gap-2 text-sm font-semibold ${hoveredRole === role.id ? role.color : "text-slate-400 dark:text-slate-500"}`}>
+              <span>Select Role</span>
+              <ArrowRight className={`w-4 h-4 transition-transform ${hoveredRole === role.id ? "translate-x-1" : ""}`} />
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
