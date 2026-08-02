@@ -5,13 +5,58 @@ import { setSelectedRole } from "../lib/firebaseAuth";
 import { useNavigate } from "react-router-dom";
 import { UserRole } from "../types";
 
-export default function WelcomeScreen() {
+import { auth } from "../lib/firebase";
+import { getUserProfile, saveUserProfile } from "../lib/firebaseDb";
+import { getDashboardRouteForRole } from "../lib/roleHelper";
+
+export default function WelcomeScreen({ onRoleSelected }: { onRoleSelected?: (role: UserRole) => void }) {
   const navigate = useNavigate();
   const [hoveredRole, setHoveredRole] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleSelectRole = (role: UserRole) => {
-    setSelectedRole(role);
-    navigate("/auth-callback");
+  const handleSelectRole = async (e: React.MouseEvent, role: UserRole) => {
+    e.preventDefault();
+    
+    console.group("[WelcomeScreen DEBUG] Role Selection");
+    console.log("3. Selected role:", role);
+    
+    if (!auth.currentUser) {
+      console.log(`No session exists. Storing pending role ${role} and navigating to target: /landing`);
+      sessionStorage.setItem("pending_role", role);
+      console.groupEnd();
+      navigate("/landing");
+      return;
+    }
+    
+    console.log("3. User ID:", auth.currentUser.uid);
+    setIsProcessing(true);
+
+    try {
+      let profile = await getUserProfile(auth.currentUser.uid);
+      if (!profile) {
+        profile = {
+          uid: auth.currentUser.uid,
+          email: auth.currentUser.email || "",
+          displayName: auth.currentUser.displayName || "User",
+        } as any;
+      }
+      
+      profile.role = role;
+      profile.onboardingCompleted = true;
+      
+      console.log("4. Saving role to Firestore...");
+      await saveUserProfile(profile as any);
+      
+      console.log("5. Role assignment successful.");
+      if (onRoleSelected) {
+        onRoleSelected(role);
+      }
+    } catch (err) {
+      console.error("Failed to save role:", err);
+      setIsProcessing(false);
+    } finally {
+      console.groupEnd();
+    }
   };
 
   const roles: {
@@ -85,8 +130,10 @@ export default function WelcomeScreen() {
             transition={{ delay: idx * 0.1 }}
             onMouseEnter={() => setHoveredRole(role.id)}
             onMouseLeave={() => setHoveredRole(null)}
-            onClick={() => handleSelectRole(role.id)}
-            className={`relative p-6 rounded-2xl border cursor-pointer transition-all duration-300 backdrop-blur-xl flex flex-col justify-between ${
+            onClick={(e) => {
+              if (!isProcessing) handleSelectRole(e, role.id);
+            }}
+            className={`relative p-6 rounded-2xl border ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} transition-all duration-300 backdrop-blur-xl flex flex-col justify-between ${
               hoveredRole === role.id
                 ? `scale-105 shadow-2xl ${role.border} bg-white/60 dark:bg-slate-900/60`
                 : "border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700"

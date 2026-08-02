@@ -17,7 +17,7 @@ import {
   Calendar,
   Send
 } from "lucide-react";
-import { DbInvitation, getInvitations, saveInvitation, getAllUserProfiles, DbUserProfile, getUserProfile } from "../../lib/firebaseDb";
+import { DbInvitation, getInvitations, saveInvitation, getAllUserProfiles, DbUserProfile, getUserProfile, getOrganization } from "../../lib/firebaseDb";
 import { UserProfile } from "../../types";
 
 interface OrganizerDashboardProps {
@@ -38,6 +38,9 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    let unsubscribeInvs: (() => void) | undefined;
+    let unsubscribeUsers: (() => void) | undefined;
+
     const initLoad = async () => {
       if (!currentUser) return;
       let orgId = currentUser.organizationId;
@@ -49,12 +52,37 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
       }
       if (orgId) {
         loadData(orgId);
+        
+        // Setup real-time listeners for synchronization
+        try {
+          const { collection, query, where, onSnapshot } = await import("firebase/firestore");
+          const { db } = await import("../../lib/firebaseDb");
+
+          const invsQuery = query(collection(db, "invitations"), where("organizationId", "==", orgId));
+          unsubscribeInvs = onSnapshot(invsQuery, (snapshot) => {
+            const invs = snapshot.docs.map(d => d.data() as DbInvitation);
+            setInvitations(invs);
+          });
+
+          const usersQuery = query(collection(db, "users"), where("organizationId", "==", orgId));
+          unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+            const users = snapshot.docs.map(d => d.data() as DbUserProfile);
+            setMembers(users);
+          });
+        } catch (err) {
+          console.error("Failed to setup real-time synchronization:", err);
+        }
       } else {
         setIsLoading(false);
-        triggerToast("Failed to resolve organization data context.", "error");
+        // Silently fail to show friendly empty state
       }
     };
     initLoad();
+    
+    return () => {
+      if (unsubscribeInvs) unsubscribeInvs();
+      if (unsubscribeUsers) unsubscribeUsers();
+    };
   }, [currentUser]);
 
   const loadData = async (targetOrgId?: string) => {
@@ -92,6 +120,11 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
       });
       setInvitations(invs);
       setMembers(users);
+      
+      const org = await getOrganization(orgId);
+      if (!org) {
+        console.warn("[OrganizerDashboard DEBUG] ⚠️ Organization data not found. Proceeding with limited context.");
+      }
     } catch (e: any) {
       console.error("[OrganizerDashboard DEBUG] ❌ Failed to load organization data!");
       console.error("[OrganizerDashboard DEBUG] Error Object:", e);
@@ -141,7 +174,7 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
 
     const emailToUse = inviteEmail.trim() || `invitee-${Date.now().toString(36)}@workspace.local`;
     const token = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substring(2);
-    const inviteId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substring(2);
+    const inviteId = token; // Use token directly as the document ID for unauthenticated lookups
     
     const newInv: DbInvitation = {
       id: inviteId,
@@ -162,7 +195,7 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
       console.log(`[OrganizerDashboard DEBUG] setDoc() on invitations/${inviteId} completed successfully.`);
 
       const baseUrl = window.location.origin;
-      const link = `${baseUrl}/#/join?token=${token}`;
+      const link = `${baseUrl}/#/invite?token=${token}&role=${inviteRole}&organizationId=${orgId}`;
       setGeneratedLink(link);
       
       try {
@@ -199,7 +232,7 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
 
   const handleSendEmailInvite = async (inv: DbInvitation) => {
     try {
-      const inviteLink = `${window.location.origin}/#/auth-callback?token=${inv.token}&role=${inv.role}`;
+      const inviteLink = `${window.location.origin}/#/invite?token=${inv.token}&role=${inv.role}`;
       const { saveEmailRecord } = await import("../../lib/firebaseDb");
       await saveEmailRecord({
         id: `email-${Date.now()}`,
@@ -219,26 +252,45 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
     }
   };
 
-  const handleApproveMember = async (member: DbUserProfile) => {
+  const handleSuspendMember = async (member: DbUserProfile) => {
     try {
-      const { saveUserProfile } = await import("../../lib/firebaseDb");
-      await saveUserProfile({ ...member, role: member.role || "Employee" });
-      triggerToast(`Approved access for ${member.displayName}!`, "success");
-      loadData();
+      const { updateUserStatus } = await import("../../lib/firebaseDb");
+      await updateUserStatus(member.uid, "SUSPENDED");
+      triggerToast(`Access suspended for ${member.displayName}`, "info");
     } catch (e) {
-      triggerToast("Failed to approve member", "error");
+      triggerToast("Failed to suspend member", "error");
     }
   };
 
-  const handleRejectMember = async (member: DbUserProfile) => {
+  const handleReactivateMember = async (member: DbUserProfile) => {
     try {
-      const { doc, deleteDoc } = await import("firebase/firestore");
-      const { db } = await import("../../lib/firebaseDb");
-      await deleteDoc(doc(db, "users", member.uid));
-      triggerToast(`Rejected request for ${member.email}`, "info");
-      loadData();
+      const { updateUserStatus } = await import("../../lib/firebaseDb");
+      await updateUserStatus(member.uid, "ACTIVE");
+      triggerToast(`Access reactivated for ${member.displayName}`, "success");
     } catch (e) {
-      triggerToast("Failed to reject request", "error");
+      triggerToast("Failed to reactivate member", "error");
+    }
+  };
+
+  const handleChangeRole = async (member: DbUserProfile) => {
+    const newRole = member.role === "Manager" ? "Employee" : "Manager";
+    try {
+      const { saveUserProfile } = await import("../../lib/firebaseDb");
+      await saveUserProfile({ ...member, role: newRole });
+      triggerToast(`Role updated to ${newRole} for ${member.displayName}`, "success");
+    } catch (e) {
+      triggerToast("Failed to change role", "error");
+    }
+  };
+
+  const handleDeleteMember = async (member: DbUserProfile) => {
+    if (!window.confirm(`Are you sure you want to permanently delete ${member.email} from the organization?`)) return;
+    try {
+      const { permanentlyDeleteUser } = await import("../../lib/firebaseDb");
+      await permanentlyDeleteUser(member.uid, member.email, member.organizationId);
+      triggerToast(`${member.displayName} removed from organization`, "info");
+    } catch (e) {
+      triggerToast("Failed to remove member", "error");
     }
   };
 
@@ -357,24 +409,53 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
                     {m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : "Active"}
                   </td>
                   <td className="py-4 px-4">
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1 w-fit">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-                    </span>
+                    {m.status === "SUSPENDED" ? (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold flex items-center gap-1 w-fit">
+                        <Clock className="w-3.5 h-3.5" /> Suspended
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1 w-fit">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Active
+                      </span>
+                    )}
                   </td>
                   <td className="py-4 px-4">
-                    {m.uid !== currentUser?.uid && (
+                    {(m.uid !== currentUser?.uid && (m.role === "Manager" || m.role === "Employee")) && (
                       <div className="flex items-center gap-2">
+                        {m.status !== "SUSPENDED" ? (
+                          <button
+                            onClick={() => handleSuspendMember(m)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 text-xs font-bold transition flex items-center gap-1"
+                            title="Suspend Access"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Suspend
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleReactivateMember(m)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition flex items-center gap-1"
+                            title="Reactivate Access"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Reactivate
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleApproveMember(m)}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition"
+                          onClick={() => handleChangeRole(m)}
+                          className="px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 text-xs font-bold transition flex items-center gap-1"
+                          title="Change Role"
                         >
-                          Re-Approve
+                          <Users className="w-3.5 h-3.5" />
+                          {m.role === "Manager" ? "Demote" : "Promote"}
                         </button>
                         <button
-                          onClick={() => handleRejectMember(m)}
-                          className="px-2.5 py-1 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 text-xs font-bold transition"
+                          onClick={() => handleDeleteMember(m)}
+                          className="px-2.5 py-1 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 text-xs font-bold transition flex items-center gap-1"
+                          title="Remove Member"
                         >
-                          Revoke
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
                         </button>
                       </div>
                     )}
@@ -411,7 +492,7 @@ export default function OrganizerDashboard({ currentUser, triggerToast }: Organi
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 text-sm">
                 {invitations.map((inv) => {
-                  const inviteLink = `${window.location.origin}/#/auth-callback?token=${inv.token}&role=${inv.role}`;
+                  const inviteLink = `${window.location.origin}/#/invite?token=${inv.token}&role=${inv.role}&organizationId=${inv.organizationId}`;
                   return (
                     <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
                       <td className="py-4 px-4 font-semibold text-slate-900 dark:text-slate-100">

@@ -62,6 +62,15 @@ export default function LandingPage({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  React.useEffect(() => {
+    const pendingRole = sessionStorage.getItem("pending_role") as UserRole | null;
+    if (pendingRole) {
+      setSelectedRole(pendingRole);
+      setAuthStage("org_input");
+      setShowAuthFlow(true);
+    }
+  }, []);
+
   // AI Sandbox Tryout Area
   const [sandboxPrompt, setSandboxPrompt] = useState("Summarize enterprise retention vectors");
   const [sandboxResponse, setSandboxResponse] = useState("");
@@ -711,38 +720,45 @@ export default function LandingPage({
               {authStage === "org_input" && (
                 <div className="space-y-4 animate-fade text-left">
                   <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider mb-1 text-center">
-                    {selectedRole === "Admin" ? "Create Organization" : "Join Organization"}
+                    {selectedRole === "Super Admin" || selectedRole === "Admin" || selectedRole === "Organizer"
+                      ? `${selectedRole === "Admin" || selectedRole === "Organizer" ? "Organizer" : "Super Admin"} Authentication` 
+                      : "Join Organization"}
                   </h3>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mb-6 text-center">
-                    {selectedRole === "Admin" ? "Name your new workspace" : "Enter your invite code"}
+                    {selectedRole === "Super Admin" || selectedRole === "Admin" || selectedRole === "Organizer"
+                      ? "Authenticate to access platform controls"
+                      : "Enter your invite code"}
                   </p>
                   
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                      {selectedRole === "Admin" ? "Organization Name" : "Invite Code"}
-                    </label>
-                    <div className="relative">
-                      <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        required
-                        value={orgInput}
-                        onChange={(e) => setOrgInput(e.target.value)}
-                        placeholder={selectedRole === "Admin" ? "e.g., Acme Corp" : "e.g., A1B2C3"}
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-medium text-slate-800 dark:text-slate-100"
-                      />
+                  {(selectedRole !== "Super Admin" && selectedRole !== "Admin" && selectedRole !== "Organizer") && (
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                        <span>Invite Code</span>
+                        <span className="text-slate-400 font-medium normal-case">(Optional for returning users)</span>
+                      </label>
+                      <div className="relative">
+                        <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={orgInput}
+                          onChange={(e) => setOrgInput(e.target.value)}
+                          placeholder="e.g., A1B2C3"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-medium text-slate-800 dark:text-slate-100"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <button
-                    disabled={isSubmitting || !orgInput.trim()}
+                    disabled={isSubmitting}
                     onClick={async () => {
-                      if (!orgInput.trim()) return;
                       setIsSubmitting(true);
                       try {
                         const { setSelectedRole: setGlobalRole, googleSignInAndSetup } = await import("../lib/firebaseAuth");
                         setGlobalRole(selectedRole);
-                        const result = await googleSignInAndSetup(orgInput.trim());
+                        const result = await googleSignInAndSetup(
+                          (selectedRole === "Super Admin" || selectedRole === "Admin" || selectedRole === "Organizer") ? "bypass_org_input" : orgInput.trim()
+                        );
                         if (result) {
                           onLoginSuccess({
                             uid: result.user.uid,
@@ -769,8 +785,8 @@ export default function LandingPage({
                       <span>Processing...</span>
                     ) : (
                       <>
-                        <Chrome className="w-3.5 h-3.5 text-red-500" />
-                        <span>Sign in with Google</span>
+                        <Chrome className="w-3.5 h-3.5" />
+                        <span>Continue with Workspace</span>
                       </>
                     )}
                   </button>

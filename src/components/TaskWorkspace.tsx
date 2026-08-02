@@ -302,6 +302,18 @@ export default function TaskWorkspace({ docs = [], user = null }: TaskWorkspaceP
           const dbTasks = await getTasks(user.organizationId);
           if (dbTasks && dbTasks.length > 0) {
             setTasks(dbTasks as unknown as Task[]);
+          } else {
+            console.log("No real tasks exist in Kanban. Automatically seeding demo data...");
+            // @ts-ignore
+            if (window.seedDemoData) {
+              // @ts-ignore
+              await window.seedDemoData();
+              // Refetch
+              const seededTasks = await getTasks(user.organizationId);
+              if (seededTasks && seededTasks.length > 0) {
+                setTasks(seededTasks as unknown as Task[]);
+              }
+            }
           }
         } catch (err) {
           console.error("Failed to load tasks from Firestore:", err);

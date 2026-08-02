@@ -43,8 +43,30 @@ export default function ManagerDashboard({ currentUser, triggerToast }: ManagerD
         getTasks(currentUser.organizationId),
         getAllUserProfiles(currentUser.organizationId)
       ]);
-      setTasks(tList);
-      setTeamMembers(users);
+      
+      // Automatic seeding for demonstration purposes if empty
+      if (tList.length === 0 && users.length <= 1) {
+        console.log("No real data exists. Automatically seeding demo data...");
+        try {
+          // @ts-ignore
+          if (window.seedDemoData) await window.seedDemoData();
+          
+          // Refetch after seeding
+          const [seededTasks, seededUsers] = await Promise.all([
+            getTasks(currentUser.organizationId),
+            getAllUserProfiles(currentUser.organizationId)
+          ]);
+          setTasks(seededTasks);
+          setTeamMembers(seededUsers);
+        } catch (seedErr) {
+          console.error("Auto-seeding failed:", seedErr);
+          setTasks(tList);
+          setTeamMembers(users);
+        }
+      } else {
+        setTasks(tList);
+        setTeamMembers(users);
+      }
     } catch (e) {
       console.error(e);
       triggerToast("Failed to load manager workspace data", "error");

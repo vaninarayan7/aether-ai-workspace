@@ -77,15 +77,25 @@ export default function AdminPanel({
       if (isAdminRole) {
         setIsLoadingData(true);
         try {
-          const [org, profiles] = await Promise.all([
-            currentUser?.organizationId ? getOrganization(currentUser.organizationId) : null,
-            getAllUserProfiles(currentUser?.organizationId)
-          ]);
-
+          const profiles = await getAllUserProfiles(currentUser?.organizationId);
           console.log(`[FirestoreData] Query executed: ${currentUser?.organizationId ? `where("organizationId", "==", "${currentUser.organizationId}")` : 'collection("users")'}`);
           console.log(`[FirestoreData] Number of documents returned:`, profiles.length);
 
-          setOrgDetails(org);
+          const org = currentUser?.organizationId ? await getOrganization(currentUser.organizationId) : null;
+          if (org) {
+            setOrgDetails(org);
+          } else {
+            console.warn("[AdminPanel] Organization not found. Generating default state.");
+            setOrgDetails({
+              organizationId: currentUser?.organizationId || "unknown",
+              organizationName: currentUser?.organizationName || "Unknown Workspace",
+              orgCode: "N/A",
+              ownerUid: currentUser?.uid || "",
+              ownerEmail: currentUser?.email || "",
+              status: "active",
+              createdAt: new Date().toISOString()
+            });
+          }
           setUsers(profiles);
         } catch (err: any) {
           console.error("[FirestoreData] Firestore errors:", err);

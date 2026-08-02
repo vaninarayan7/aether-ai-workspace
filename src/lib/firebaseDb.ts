@@ -387,29 +387,18 @@ export async function getInvitations(organizationId: string): Promise<DbInvitati
 }
 
 export async function getInvitationByToken(token: string): Promise<DbInvitation | null> {
-  const path = "invitations";
+  const path = `invitations/${token}`;
   try {
-    console.log(`[getInvitationByToken DEBUG] 1. Queried Collection: "invitations"`);
-    console.log(`[getInvitationByToken DEBUG] 2. Field used for lookup: "token"`);
-    console.log(`[getInvitationByToken DEBUG] 3. Executing Query: query(collection(db, "invitations"), where("token", "==", "${token}"))`);
+    console.log(`[getInvitationByToken DEBUG] Fetching invitation by Document ID: "${token}"`);
+    const docRef = doc(db, "invitations", token);
+    const snap = await getDoc(docRef);
     
-    const q = query(collection(db, "invitations"), where("token", "==", token));
-    const snap = await getDocs(q);
-    
-    console.log(`[getInvitationByToken DEBUG] 4. Returned documents count: ${snap.size}`);
-
-    if (!snap.empty) {
-      console.log(`[getInvitationByToken DEBUG] Found matching invitation:`, snap.docs[0].data());
-      return snap.docs[0].data() as DbInvitation;
+    if (snap.exists()) {
+      console.log(`[getInvitationByToken DEBUG] Found matching invitation:`, snap.data());
+      return snap.data() as DbInvitation;
     }
 
-    console.warn(`[getInvitationByToken DEBUG] Token not found! Fetching all invitations to check...`);
-    const allSnap = await getDocs(collection(db, "invitations"));
-    console.warn(`[getInvitationByToken DEBUG] Total invitations in DB: ${allSnap.size}`);
-    allSnap.forEach(d => {
-      console.warn(`  - Doc ID: ${d.id}, Token Field: "${d.data().token}", Match: ${d.data().token === token}`);
-    });
-    
+    console.warn(`[getInvitationByToken DEBUG] Invitation with ID (token) "${token}" not found!`);
     return null;
   } catch (err) {
     console.warn(`[Firestore] Failed to get invitation for token. Error:`, err);

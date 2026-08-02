@@ -31,7 +31,7 @@ let selectedRole: UserRole | null = null;
 let currentUserProfile: import("./firebaseDb").DbUserProfile | null = null;
 
 export const normalizeRole = (role?: string): UserRole => {
-  if (!role) return "Employee";
+  if (!role) return "" as UserRole;
   const r = role.trim().toUpperCase().replace(/[\s_-]+/g, "");
   if (r === "SUPERADMIN") return "Super Admin";
   if (r === "ADMIN") return "Admin";
@@ -142,7 +142,12 @@ export const processPendingInvitation = async (user: User, pendingToken: string)
   // Now mark invitation as accepted
   const { doc, setDoc } = await import("firebase/firestore");
   const { db } = await import("./firebaseDb");
-  await setDoc(doc(db, "invitations", inviteId), { status: "accepted" }, { merge: true });
+  await setDoc(doc(db, "invitations", inviteId), { 
+    status: "accepted",
+    accessStatus: "Approved",
+    acceptedAt: new Date().toISOString(),
+    acceptedBy: user.uid
+  }, { merge: true });
   console.log(`[FirebaseAuth] ✅ Invitation ${inviteId} marked as accepted.`);
   
   const reloadedProfile = await getUserProfile(user.uid);
@@ -453,6 +458,9 @@ export const signUpEmailPassword = async (
   displayName: string,
   role: UserRole = "Employee"
 ): Promise<{ user: User; role: UserRole }> => {
+  if (role === "Employee" || role === "Manager") {
+    throw new Error("Direct sign-up is disabled for Employees and Managers. You must use an invite link.");
+  }
   try {
     const credential = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(credential.user, { displayName });
@@ -732,7 +740,11 @@ export const setSelectedRole = (role: UserRole) => {
   selectedRole = role;
   console.log("[FirebaseAuth] Role selected for onboarding:", role);
 };
-export const getSelectedRole = () => selectedRole;
+export const getSelectedRole = (): UserRole | null => {
+  const role = selectedRole || (sessionStorage.getItem("pending_role") as UserRole | null);
+  console.log("[FirebaseAuth] getSelectedRole returned:", role);
+  return role;
+};
 
 // Create a new organization (admin flow)
 export const createOrganization = async (name: string) => {
@@ -764,39 +776,57 @@ export const joinOrganizationByToken = async (token: string, email: string) => {
   const { doc, setDoc } = await import("firebase/firestore");
   const { getInvitationByToken, getOrganization, db } = await import("./firebaseDb");
   
-  console.group("[joinOrganizationByToken DEBUG]");
+  console.group("[joinOrganizationByToken DEBUG] Token Validation Flow");
   console.log("  1. Token passed from AuthCallback:", token);
   console.log("  2. Email passed for membership:", email);
 
+  console.log("  3. Querying Firestore for invitation matching token...");
   const invite = await getInvitationByToken(token);
-  console.log("  5. Invitation lookup result (Full Object):", invite);
+  console.log("  4. Invitation lookup result:", invite);
 
   if (!invite) {
-    console.error("  ❌ Invitation token invalid (not found in database).");
+    console.error("  ❌ Validation Failed: Invitation token not found in database.");
     console.groupEnd();
-    throw new Error("Invalid or expired invitation token.");
+    throw new Error("Invalid or Expired Invitation");
   }
+  console.log("  ✅ Validation Step 1 Passed: Invitation exists in database.");
 
   if (invite.status !== "pending") {
-    console.error("  ❌ Invitation already used or revoked. Status:", invite.status);
+    console.error(`  ❌ Validation Failed: Invitation already used or revoked. Current Status: ${invite.status}`);
     console.groupEnd();
-    throw new Error("Invitation has already been used or revoked.");
+    throw new Error("This invitation link has already been used. Please contact your Organizer for a new invitation.");
+  }
+  console.log("  ✅ Validation Step 2 Passed: Invitation status is 'pending'.");
+
+  let expiresAtMs = 0;
+  if (invite.expiresAt) {
+    if (typeof (invite.expiresAt as any).toDate === "function") {
+      expiresAtMs = (invite.expiresAt as any).toDate().getTime();
+    } else if (typeof (invite.expiresAt as any).toMillis === "function") {
+      expiresAtMs = (invite.expiresAt as any).toMillis();
+    } else {
+      expiresAtMs = new Date(invite.expiresAt).getTime();
+    }
   }
 
-  if (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
-    console.error("  ❌ Invitation expired at:", invite.expiresAt);
+  if (expiresAtMs > 0 && expiresAtMs < Date.now()) {
+    console.error(`  ❌ Validation Failed: Invitation expired at ${new Date(expiresAtMs).toISOString()}. Current time: ${new Date().toISOString()}`);
     console.groupEnd();
-    throw new Error("Invitation has expired.");
+    throw new Error("Invalid or Expired Invitation");
   }
+  console.log(`  ✅ Validation Step 3 Passed: Invitation is not expired (Expires at: ${new Date(expiresAtMs).toISOString()}).`);
 
-  if (invite.email.toLowerCase() !== email.toLowerCase()) {
-    console.error("  ❌ Email mismatch. Expected:", invite.email, "Got:", email);
+  if (!invite.email || invite.email.trim().toLowerCase() !== email.trim().toLowerCase()) {
+    console.error(`  ❌ Validation Failed: Email mismatch. Expected: ${invite.email}, Got: ${email}`);
     console.groupEnd();
     throw new Error("This invitation was sent to a different email address.");
   }
+  console.log("  ✅ Validation Step 4 Passed: Email matches the invitation.");
 
+  console.log(`  5. Querying Firestore for organization matching ID: ${invite.organizationId}...`);
   let org = await getOrganization(invite.organizationId);
-  console.log("  Organization lookup result:", org);
+  console.log("  6. Organization lookup result:", org);
+  
   if (!org) {
     console.warn("  ⚠️ Referenced Organization not found for ID:", invite.organizationId);
     
@@ -824,8 +854,9 @@ export const joinOrganizationByToken = async (token: string, email: string) => {
       throw new Error("Organization not found.");
     }
   }
+  console.log("  ✅ Validation Step 5 Passed: Organization exists or was recreated.");
 
-  console.log("  [joinOrganizationByToken] Successfully validated invitation.");
+  console.log("  [joinOrganizationByToken] 🎉 Successfully validated invitation.");
   console.groupEnd();
   
   return { org, role: normalizeRole(invite.role), inviteId: invite.id };
@@ -854,6 +885,10 @@ export const googleSignInAndSetup = async (setupData: string | { orgInput: strin
   // Permanent Super Admin check
   if (user.email?.toLowerCase() === PERMANENT_SUPER_ADMIN_EMAIL.toLowerCase()) {
     role = "Super Admin";
+  } else if (role === "Super Admin") {
+    // Demote unauthorized Super Admins to Employee
+    console.warn(`[AuthFlow] Unauthorized Super Admin attempt by ${user.email}. Demoting to Employee.`);
+    role = "Employee";
   } else if (!role) {
     role = "Employee";
   }
@@ -892,6 +927,20 @@ export const googleSignInAndSetup = async (setupData: string | { orgInput: strin
     }
 
     console.log(`[AuthFlow] Login allowed/denied: ALLOWED`);
+    
+    // If the user already exists but they are signing in with an invite token, process it.
+    // We can infer it's an invite token if orgInput is present and role is not explicitly Organizer.
+    if (orgInput && role !== "Super Admin" && role !== "Organizer") {
+      try {
+        console.log(`[AuthFlow] Processing pending invitation for existing user: ${orgInput}`);
+        profile = await processPendingInvitation(user, orgInput);
+        console.log(`[AuthFlow] ✅ Processed invite for existing user. New role: ${profile.role}`);
+      } catch (err: any) {
+        console.error("[AuthFlow] Failed to process invitation for existing user:", err);
+        throw err;
+      }
+    }
+    
     console.log(`[AuthFlow] Redirect destination role: ${profile.role}`);
     return { user, token: accessToken, profile };
   } else {
@@ -913,6 +962,19 @@ export const googleSignInAndSetup = async (setupData: string | { orgInput: strin
     console.log("[FirebaseAuth] ✅ Super Admin profile saved. uid:", user.uid);
   } else if (profile.role === "Organizer") {
     if (!orgInput) throw new Error("Organization name required");
+    
+    // --- ORGANIZER NAME PROMPT ---
+    if (!(profile as any).organizerName) {
+      const pName = window.prompt("Welcome, Organizer! Please enter your Organizer Name:");
+      (profile as any).organizerName = pName || user.displayName || user.email?.split('@')[0] || "Organizer";
+    }
+    // -----------------------------
+    
+    // Automatically generate an organization name if bypassing the popup
+    const finalOrgInput = orgInput === "bypass_org_input" 
+      ? `${user.displayName || user.email?.split('@')[0] || "My"} Workspace` 
+      : orgInput;
+
     const { doc, setDoc, runTransaction, getDoc } = await import("firebase/firestore");
     const { db } = await import("./firebaseDb");
     
@@ -931,7 +993,7 @@ export const googleSignInAndSetup = async (setupData: string | { orgInput: strin
     const now = new Date().toISOString();
     const orgDoc = { 
       organizationId: orgId, 
-      organizationName: orgInput, 
+      organizationName: finalOrgInput, 
       orgCode: inviteCode, 
       companyLogo: companyLogo || "",
       companyDomain: companyDomain || "",
@@ -984,7 +1046,7 @@ export const googleSignInAndSetup = async (setupData: string | { orgInput: strin
       }
     }
   } else {
-    if (!orgInput) throw new Error("Invite token required");
+    if (!orgInput) throw new Error("An invite code is required for new accounts.");
     profile = await processPendingInvitation(user, orgInput);
     console.log("[FirebaseAuth] ✅ User profile saved via processPendingInvitation. uid:", user.uid);
   }

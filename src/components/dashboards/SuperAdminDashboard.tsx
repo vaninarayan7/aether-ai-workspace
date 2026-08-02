@@ -41,11 +41,13 @@ export default function SuperAdminDashboard({ currentUser, triggerToast }: Super
   const loadOrganizations = async () => {
     setIsLoading(true);
     try {
+      const { auth } = await import("../../lib/firebase");
+      await auth.authStateReady();
       const orgs = await getAllOrganizations();
       setOrganizations(orgs);
-    } catch (e) {
-      console.error(e);
-      triggerToast("Failed to load organizations", "error");
+    } catch (e: any) {
+      console.error("[SuperAdminDashboard] Backend error loading organizations:", e);
+      triggerToast("Could not load organizations. Please check your permissions or network.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +84,7 @@ export default function SuperAdminDashboard({ currentUser, triggerToast }: Super
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
         });
 
-        const link = `${window.location.origin}/#/auth-callback?token=${token}&role=Organizer`;
+        const link = `${window.location.origin}/#/invite?token=${token}&role=Organizer`;
         setCreatedInviteLink(link);
       }
 

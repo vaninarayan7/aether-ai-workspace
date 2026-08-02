@@ -256,7 +256,7 @@ async function startServer() {
           let values = EMBEDDING_CACHE.get(chunkTextValue);
           if (!values) {
             const embResponse = (await ai.models.embedContent({
-              model: "gemini-embedding-2-preview",
+              model: "gemini-embedding-001",
               contents: chunkTextValue
             })) as any;
             values = embResponse.embedding?.values;
@@ -316,12 +316,12 @@ async function startServer() {
 
       for (let i = 0; i < chunks.length; i++) {
         const chunkTextValue = chunks[i];
-        
+
         let values = EMBEDDING_CACHE.get(chunkTextValue);
         if (!values) {
-          // Generate real embedding using modern gemini-embedding-2-preview
+          // Generate real embedding using modern gemini-embedding-001
           const embRes = (await ai.models.embedContent({
-            model: "gemini-embedding-2-preview",
+            model: "gemini-embedding-001",
             contents: chunkTextValue
           })) as any;
 
@@ -353,9 +353,9 @@ async function startServer() {
     } catch (err: any) {
       console.error("Embedding indexing error:", err);
       const isRateLimit = isRateLimitError(err);
-      res.status(isRateLimit ? 429 : 500).json({ 
-        error: err.message || "Failed to index document embeddings.",
-        isRateLimit 
+      res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "Failed to index document embeddings."),
+        isRateLimit
       });
     }
   });
@@ -404,9 +404,9 @@ async function startServer() {
     } catch (err: any) {
       console.error("Transcription error:", err);
       const isRateLimit = isRateLimitError(err);
-      res.status(isRateLimit ? 429 : 500).json({ 
-        error: err.message || "Failed to transcribe voice snippet.",
-        isRateLimit 
+      res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "Failed to transcribe voice snippet."),
+        isRateLimit
       });
     }
   });
@@ -461,8 +461,8 @@ async function startServer() {
     } catch (err: any) {
       console.error("AI Document intelligence error:", err);
       const isRateLimit = isRateLimitError(err);
-      res.status(isRateLimit ? 429 : 500).json({ 
-        error: err.message || "Failed to execute AI document intelligence operation.",
+      res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "Failed to execute AI document intelligence operation."),
         isRateLimit
       });
     }
@@ -503,8 +503,8 @@ async function startServer() {
     } catch (err: any) {
       console.error("Ask AI error:", err);
       const isRateLimit = isRateLimitError(err);
-      res.status(isRateLimit ? 429 : 500).json({ 
-        error: err.message || "Failed to query the document.",
+      res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "Failed to query the document."),
         isRateLimit
       });
     }
@@ -528,7 +528,7 @@ async function startServer() {
 
       // Embed query string
       const embRes = (await ai.models.embedContent({
-        model: "gemini-embedding-2-preview",
+        model: "gemini-embedding-001",
         contents: query
       })) as any;
 
@@ -557,7 +557,11 @@ async function startServer() {
       res.json({ citations: matches });
     } catch (err: any) {
       console.error("Semantic query error:", err);
-      res.status(500).json({ error: err.message || "Vector similarity query failed." });
+      const isRateLimit = isRateLimitError(err);
+      res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "Vector similarity query failed."),
+        isRateLimit
+      });
     }
   });
 
@@ -568,11 +572,11 @@ async function startServer() {
         throw new Error("Gemini API key is not configured on the server.");
       }
 
-      const { 
-        messages, 
-        systemInstruction, 
-        modelName, 
-        temperature, 
+      const {
+        messages,
+        systemInstruction,
+        modelName,
+        temperature,
         activeDocIds,
         enableQueryExpansion,
         enableGroundingEvaluation,
@@ -626,7 +630,7 @@ async function startServer() {
 
           for (const q of queryTextsToEmbed) {
             const embRes = (await ai.models.embedContent({
-              model: "gemini-embedding-2-preview",
+              model: "gemini-embedding-001",
               contents: q
             })) as any;
 
@@ -677,7 +681,7 @@ async function startServer() {
 
       if (enablePromptCompression && retrievedCitations.length > 0) {
         try {
-          const combinedText = retrievedCitations.map((c, i) => `[Source #${i+1} - ${c.docName}]: ${c.text}`).join("\n\n");
+          const combinedText = retrievedCitations.map((c, i) => `[Source #${i + 1} - ${c.docName}]: ${c.text}`).join("\n\n");
           const compressionPrompt = `Compress and summarize the following retrieved documentation segments into a concise, information-dense reference text. Remove boilerplate, repetitive statements, and filler words, but preserve all metrics, numbers, KPIs, and precise details. Output ONLY the compressed reference text. Do not add any greeting or meta-commentary.\n\n${combinedText}`;
           const compRes = await ai.models.generateContent({
             model: "gemini-3.6-flash",
@@ -687,18 +691,18 @@ async function startServer() {
           compressedCharCount = compressedCitationsText.length;
         } catch (cErr) {
           console.warn("Failed RAG context prompt compression:", cErr);
-          compressedCitationsText = retrievedCitations.map((c, i) => `[Source #${i+1} - ${c.docName}]: ${c.text}`).join("\n\n");
+          compressedCitationsText = retrievedCitations.map((c, i) => `[Source #${i + 1} - ${c.docName}]: ${c.text}`).join("\n\n");
         }
       } else {
-        compressedCitationsText = retrievedCitations.map((c, i) => `[Source #${i+1} - ${c.docName}]: ${c.text}`).join("\n\n");
+        compressedCitationsText = retrievedCitations.map((c, i) => `[Source #${i + 1} - ${c.docName}]: ${c.text}`).join("\n\n");
       }
 
       const originalTokenCount = Math.round(originalCharCount / 4.1);
       const compressedTokenCount = Math.round(compressedCharCount / 4.1);
 
       // Send citations and token savings metadata chunk first
-      res.write(`data: ${JSON.stringify({ 
-        type: "citations", 
+      res.write(`data: ${JSON.stringify({
+        type: "citations",
         citations: retrievedCitations,
         originalTokenCount,
         compressedTokenCount,
@@ -707,7 +711,7 @@ async function startServer() {
 
       // Synthesize grounded system instructions
       let activeSystemInstruction = systemInstruction || "You are an elite, enterprise-grade AI assistant. Format answers beautifully in Markdown.";
-      
+
       if (retrievedCitations.length > 0) {
         activeSystemInstruction += "\n\n=== SEMANTIC RAG GROUNDING SOURCES ===\n" +
           "Use the following compressed grounding context compiled from uploaded documents to formulate your answer. " +
@@ -782,7 +786,7 @@ Evaluate the Assistant's generated response against the provided Grounding Sourc
 "${queryText}"
 
 [Grounding Sources]:
-${retrievedCitations.map((c, i) => `[Source #${i+1}]: ${c.text}`).join("\n\n")}
+${retrievedCitations.map((c, i) => `[Source #${i + 1}]: ${c.text}`).join("\n\n")}
 
 [Generated Assistant Answer]:
 "${finalAnswerText}"
@@ -807,7 +811,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
           const evalText = (evalRes.text || "{}").trim();
           const cleanEvalText = evalText.replace(/```json/gi, "").replace(/```/gi, "").trim();
           const parsedEval = JSON.parse(cleanEvalText);
-          
+
           groundingScore = parsedEval.groundingScore ?? 100;
           relevanceScore = parsedEval.relevanceScore ?? 100;
           evaluationReport = parsedEval.evaluationReport ?? "Verified perfect alignment with grounding assets.";
@@ -822,10 +826,10 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       }
 
       // Send evaluation report and final payload indicators
-      res.write(`data: ${JSON.stringify({ 
-        type: "evaluation", 
-        groundingScore, 
-        relevanceScore, 
+      res.write(`data: ${JSON.stringify({
+        type: "evaluation",
+        groundingScore,
+        relevanceScore,
         evaluationReport,
         expandedQueries
       })}\n\n`);
@@ -835,7 +839,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
     } catch (err: any) {
       console.error("SSE stream error:", err);
       const isRateLimit = isRateLimitError(err);
-      res.write(`data: ${JSON.stringify({ type: "error", error: err.message || "SSE grounding failure.", isRateLimit })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "error", error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "SSE grounding failure."), isRateLimit })}\n\n`);
       res.end();
     }
   });
@@ -875,8 +879,8 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       }
 
       const rawModel = modelName || "gemini-3.6-flash";
-      const activeModel = (rawModel === "gemini-2.5-flash" || rawModel.startsWith("gemini-2.0") || rawModel.startsWith("gemini-1.5")) 
-        ? "gemini-3.6-flash" 
+      const activeModel = (rawModel === "gemini-2.5-flash" || rawModel.startsWith("gemini-2.0") || rawModel.startsWith("gemini-1.5"))
+        ? "gemini-3.6-flash"
         : rawModel;
 
       const response = await ai.models.generateContent({
@@ -900,9 +904,9 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
     } catch (err: any) {
       console.error("Non-streaming chat error:", err);
       const isRateLimit = isRateLimitError(err);
-      res.status(isRateLimit ? 429 : 500).json({ 
-        error: err.message || "Failed to process chat response.",
-        isRateLimit 
+      res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit ? "AI features are temporarily unavailable because the API quota has been exceeded." : (err.message || "Failed to process chat response."),
+        isRateLimit
       });
     }
   });
@@ -914,12 +918,12 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
       const clientId = config.oAuthClientId;
       if (!clientId) return res.status(400).send("oAuthClientId is missing in configuration.");
-      
+
       const redirectUri = `http://localhost:${PORT}/api/oauth/callback`;
       const scope = "email profile openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/gmail.send";
-      
+
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
-      
+
       res.redirect(authUrl);
     } catch (e) {
       console.error("Error initiating OAuth:", e);
@@ -966,7 +970,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       }
 
       const tokenData = await tokenResponse.json();
-      
+
       // Return a popup HTML that communicates with the parent window
       res.send(`
         <html>
@@ -1094,7 +1098,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       if (!gResponse.ok && (gResponse.status === 401 || gResponse.status === 403) && refreshToken) {
         console.log("Token expired or unauthorized, attempting to refresh token...");
         const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
-        
+
         if (config.oAuthClientId && config.oAuthClientSecret) {
           const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST",
@@ -1185,17 +1189,17 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   // ----------------------------------------------------
   // SECURE NEXORA MEETINGS LIFECYCLE & RLS-LIKE ENDPOINTS
   // ----------------------------------------------------
-  
+
   // 1. Create Meeting
   app.post("/api/meetings/create", (req, res) => {
     const { title, date, time, duration, password, waitingRoomEnabled, userId, userEmail, userName, invitedEmails } = req.body;
-    
+
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized. Valid host identification required." });
     }
-    
+
     const newId = req.body.id || `aet-${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 5)}`;
-    
+
     const newMeeting: ServerMeeting = {
       id: newId,
       title: title || "Nexora Secure Sync",
@@ -1215,10 +1219,10 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       locked: false,
       date: date || new Date().toISOString().split("T")[0]
     };
-    
+
     MEETINGS_STORE.push(newMeeting);
     saveMeetings();
-    
+
     res.json({ success: true, meeting: newMeeting });
   });
 
@@ -1226,19 +1230,19 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/start", (req, res) => {
     const { id } = req.params;
     const { userId } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     if (meeting.ownerId !== userId) {
       return res.status(403).json({ error: "Access Denied. Only the unique host can start this meeting." });
     }
-    
+
     meeting.status = "live"; // Start meeting -> Live state
     saveMeetings();
-    
+
     res.json({ success: true, meeting });
   });
 
@@ -1246,22 +1250,22 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/join", (req, res) => {
     const { id } = req.params;
     const { name, password, userId, userEmail } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     // Check if locked
     if (meeting.locked) {
       return res.status(403).json({ error: "This meeting is locked by the host. No new participants are allowed." });
     }
-    
+
     // Check password if configured
     if (meeting.password && meeting.password !== password) {
       return res.status(401).json({ error: "Incorrect meeting security password." });
     }
-    
+
     // Check meeting status (lifecycle states)
     if (meeting.status === "upcoming") {
       // Is current joining user the host?
@@ -1271,18 +1275,18 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
         saveMeetings();
       } else {
         // Guests cannot join while the meeting is Scheduled
-        return res.status(403).json({ 
-          error: "The host has not started this meeting yet. Please wait until the meeting begins." 
+        return res.status(403).json({
+          error: "The host has not started this meeting yet. Please wait until the meeting begins."
         });
       }
     } else if (meeting.status === "completed") {
       // Block joins if Ended
       return res.status(403).json({ error: "This meeting has already ended." });
     }
-    
+
     // Handle Waiting Room
     const isHostUser = meeting.ownerId === userId || (userEmail && meeting.invitedEmails.includes(userEmail.toLowerCase()) && userId === meeting.ownerId);
-    
+
     if (meeting.waitingRoomEnabled && !isHostUser) {
       // Check if this guest name has already been admitted
       const isAlreadyAdmitted = meeting.participants.includes(name);
@@ -1297,7 +1301,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
         return res.json({ inWaitingRoom: true, meeting: { id: meeting.id, title: meeting.title, waitingRoomEnabled: true, waitingRoomQueue: meeting.waitingRoomQueue } });
       }
     }
-    
+
     // Successfully joining the live meeting
     if (!meeting.participants.includes(name)) {
       meeting.participants.push(name);
@@ -1306,12 +1310,12 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       meeting.participantIds.push(userId);
     }
     saveMeetings();
-    
+
     // Note: Public meeting links should allow joining the live meeting only. 
     // They must never expose recordings, transcripts, or meeting history to guests.
     // So we strip those out for non-owners/non-authorized participants!
     const isAuthorized = isHostUser || (userEmail && meeting.invitedEmails.includes(userEmail.toLowerCase()));
-    
+
     const strippedMeeting = { ...meeting };
     if (!isAuthorized) {
       delete strippedMeeting.summary;
@@ -1321,7 +1325,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       delete strippedMeeting.insights;
       delete strippedMeeting.notes;
     }
-    
+
     res.json({ allowed: true, meeting: strippedMeeting });
   });
 
@@ -1329,22 +1333,22 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/poll-status", (req, res) => {
     const { id } = req.params;
     const { name } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     if (meeting.status === "completed") {
       return res.json({ status: "completed" });
     }
-    
+
     // Check if the guest has been admitted (their name is in participants list)
     const isAdmitted = meeting.participants.includes(name);
     if (isAdmitted) {
       return res.json({ admitted: true, status: "live", meeting });
     }
-    
+
     res.json({ admitted: false, status: meeting.status });
   });
 
@@ -1352,25 +1356,25 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/admit", (req, res) => {
     const { id } = req.params;
     const { userId, guestName } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     if (meeting.ownerId !== userId) {
       return res.status(403).json({ error: "Access Denied." });
     }
-    
+
     if (meeting.waitingRoomQueue) {
       meeting.waitingRoomQueue = meeting.waitingRoomQueue.filter(g => g !== guestName);
     }
-    
+
     if (!meeting.participants.includes(guestName)) {
       meeting.participants.push(guestName);
     }
     saveMeetings();
-    
+
     res.json({ success: true, meeting });
   });
 
@@ -1378,36 +1382,36 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/end", (req, res) => {
     const { id } = req.params;
     const { userId, summary, transcript, decisions, actionItems, insights } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     if (meeting.ownerId !== userId) {
       return res.status(403).json({ error: "Access Denied. Only the host can end this meeting." });
     }
-    
+
     meeting.status = "completed"; // Ended state
     meeting.summary = summary;
     meeting.transcript = transcript;
     meeting.decisions = decisions;
     meeting.actionItems = actionItems;
     meeting.insights = insights;
-    
+
     saveMeetings();
-    
+
     res.json({ success: true, meeting });
   });
 
   // 7. Secure List Meetings (RLS equivalent)
   app.post("/api/meetings/list", (req, res) => {
     const { userId, userEmail } = req.body;
-    
+
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized." });
     }
-    
+
     // Filter list: only see own meetings OR meetings where invited by email
     const filtered = MEETINGS_STORE.filter(m => {
       const isOwner = m.ownerId === userId;
@@ -1415,7 +1419,7 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
       const isParticipant = m.participantIds.includes(userId);
       return isOwner || isInvited || isParticipant;
     });
-    
+
     res.json({ meetings: filtered });
   });
 
@@ -1423,21 +1427,21 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/details", (req, res) => {
     const { id } = req.params;
     const { userId, userEmail } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     // Verify user is authorized: must be owner, invited email, or active participant
     const isOwner = meeting.ownerId === userId;
     const isInvited = userEmail && meeting.invitedEmails.includes(userEmail.toLowerCase());
     const isParticipant = meeting.participantIds.includes(userId);
-    
+
     if (!isOwner && !isInvited && !isParticipant) {
       return res.status(403).json({ error: "Access Denied. You do not have permission to view this meeting history." });
     }
-    
+
     res.json({ meeting });
   });
 
@@ -1445,19 +1449,19 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/remove-participant", (req, res) => {
     const { id } = req.params;
     const { userId, nameToRemove } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     if (meeting.ownerId !== userId) {
       return res.status(403).json({ error: "Access Denied." });
     }
-    
+
     meeting.participants = meeting.participants.filter(p => p !== nameToRemove);
     saveMeetings();
-    
+
     res.json({ success: true, meeting });
   });
 
@@ -1465,19 +1469,19 @@ Return ONLY a valid JSON object matching this schema. Do not add markdown annota
   app.post("/api/meetings/:id/lock", (req, res) => {
     const { id } = req.params;
     const { userId, locked } = req.body;
-    
+
     const meeting = MEETINGS_STORE.find(m => m.id === id);
     if (!meeting) {
       return res.status(404).json({ error: "Meeting not found." });
     }
-    
+
     if (meeting.ownerId !== userId) {
       return res.status(403).json({ error: "Access Denied." });
     }
-    
+
     meeting.locked = !!locked;
     saveMeetings();
-    
+
     res.json({ success: true, meeting });
   });
 
